@@ -1,14 +1,85 @@
 import netP5.*;
 import oscP5.*;
+import org.openkinect.freenect.*;
+import org.openkinect.processing.*;
+import processing.video.*;
+import processing.serial.*;
 
+JSONArray values;
+Serial arduino;
+Kinect kinect;
 OscP5 oscP5;
 NetAddress myRemoteLocation;
+
+int interval = 5000;
+int time = millis();
+int waveIndex = 0;
+float []waveDir;
+float []waveHeight;
+boolean isKinectLive = false;
+boolean sendOnce = true;
 
 void setup()
 { 
   size(500, 500);
   background(255);
-  openOSC();
+  
+  openArduino();
+  openWaveData();
+  //
+  //openOSC();
+  //openKinect();
+}
+
+void openWaveData()
+{
+  String[] lines = loadStrings("wave_dir.txt");
+  String []waveString = split(lines[0],',');
+  
+  waveDir = new float[waveString.length];
+  
+  for(int i=0;i<waveString.length;i++)
+  {
+    waveDir[i] = float(waveString[i]);
+  }
+  
+  lines = loadStrings("wave_height.txt");
+  waveString = split(lines[0],',');
+  
+  waveHeight = new float[waveString.length];
+  
+  for(int i=0;i<waveString.length;i++)
+  {
+    waveHeight[i] = float(waveString[i]);
+  }
+  
+  println(waveDir[0],waveDir.length);
+  println(waveHeight[0],waveHeight.length);
+  println("---------------------");
+}
+
+void openArduino()
+{
+  println(Serial.list());
+  arduino = new Serial(this, "COM3", 9600);
+  arduino.write("0,0");
+}
+
+void openKinect()
+{
+  kinect = new Kinect(this);
+
+  if (kinect.numDevices() > 0)
+  {
+    kinect.initDepth();
+    kinect.enableIR(true);  
+    kinect.enableMirror(true);
+    isKinectLive = true;
+    println("Kinect is working");
+  } else
+  {
+    println("Can't found kinect sensor");
+  }
 }
 
 void openOSC()
@@ -16,7 +87,7 @@ void openOSC()
   oscP5 = new OscP5(this, 12000);
   myRemoteLocation = new NetAddress("127.0.0.1", 12000); //port 3107
 
-  println("its working");
+  println("osc is working");
 }
 
 void setPosition(PVector pos)
@@ -25,10 +96,61 @@ void setPosition(PVector pos)
   myMessage.add(pos.x);
   myMessage.add(pos.y);
   myMessage.add(pos.z);
-  oscP5.send(myMessage, myRemoteLocation);   
+  oscP5.send(myMessage, myRemoteLocation);
+}
+
+void traceMovement()
+{
+  int[] rawDepth;
+
+  rawDepth = kinect.getRawDepth();
+  
+  setPosition(new PVector(random(0, 100), 200, 300));
 }
 
 void draw() {
+  if(isKinectLive){
+    traceMovement();
+  }
   
-  setPosition(new PVector(100,200,300));
+  if (millis() - time >= interval && sendOnce) {
+    sendWaveData();
+    time = millis();
+    sendOnce = false;
+  }
 }
+
+void serialEvent(Serial p) { 
+  String str = p.readString();
+  print(str);
+  
+  if(str.equals("!")){
+    sendWaveData();
+  }
+} 
+
+void sendWaveData()
+{
+  int tempWaveDir = (int)map(waveDir[waveIndex],0,360,0,180);
+  int tempWaveHeight = (int)map(waveHeight[waveIndex],0,2.9,0,180);
+  
+  arduino.write(tempWaveDir+","+tempWaveHeight);
+ 
+  println("data sent :"+" "+tempWaveDir+","+tempWaveHeight);
+  
+  waveIndex++;
+  
+  if(waveIndex >= waveDir.length)
+  {
+    waveIndex = 0;
+  }
+}
+
+void mousePressed()
+{
+  int wave1 = (int)random(0,180);
+  int wave2 = (int)random(0,180);
+ 
+  arduino.write(wave1+","+wave2);
+}
+  

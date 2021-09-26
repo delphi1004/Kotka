@@ -4,10 +4,10 @@ import oscP5.*;
 OscP5 oscP5;
 NetAddress myRemoteLocation;
 
-
 void setup()
 {
   size(500, 500);
+  background(156,120,30);
 
   oscP5 = new OscP5(this, 12000);
 }
@@ -16,6 +16,7 @@ void oscEvent(OscMessage theOscMessage) {
   float x=0;
   float y=0;
   float h=0;
+  
   if (theOscMessage.checkAddrPattern("/xyh")==true)
   {
     x = theOscMessage.get(0).floatValue();
