@@ -4,11 +4,14 @@ import org.openkinect.freenect.*;
 import org.openkinect.processing.*;
 import processing.video.*;
 import processing.serial.*;
+import gab.opencv.*;
+import java.awt.Rectangle;
 
 JSONArray values;
 Serial arduino;
 Kinect kinect;
 OscP5 oscP5;
+OpenCV opencv;
 NetAddress myRemoteLocation;
 
 int interval = 5000;
@@ -18,43 +21,56 @@ float []waveDir;
 float []waveHeight;
 boolean isKinectLive = false;
 boolean sendOnce = true;
+ArrayList<Contour> contours;
+ArrayList<Contour> polygons;
+PImage depthImg;
+int minDepth =  60;
+int maxDepth = 900;
 
 void setup()
 { 
-  size(500, 500);
+  size(800, 600);
   background(255);
-  
+
+  openKinect();
+  openOpenCv();
   openArduino();
   openWaveData();
-  //
-  //openOSC();
-  //openKinect();
+  openOSC();
+}
+
+void openOpenCv()
+{
+  opencv = new OpenCV(this, 640, 480);
+  opencv.startBackgroundSubtraction(5, 3, 0.5);
+  depthImg = new PImage(kinect.width, kinect.height);
+  println("OpenCV has started");
 }
 
 void openWaveData()
 {
   String[] lines = loadStrings("wave_dir.txt");
-  String []waveString = split(lines[0],',');
-  
+  String []waveString = split(lines[0], ',');
+
   waveDir = new float[waveString.length];
-  
-  for(int i=0;i<waveString.length;i++)
+
+  for (int i=0; i<waveString.length; i++)
   {
     waveDir[i] = float(waveString[i]);
   }
-  
+
   lines = loadStrings("wave_height.txt");
-  waveString = split(lines[0],',');
-  
+  waveString = split(lines[0], ',');
+
   waveHeight = new float[waveString.length];
-  
-  for(int i=0;i<waveString.length;i++)
+
+  for (int i=0; i<waveString.length; i++)
   {
     waveHeight[i] = float(waveString[i]);
   }
-  
-  println(waveDir[0],waveDir.length);
-  println(waveHeight[0],waveHeight.length);
+
+  println(waveDir[0], waveDir.length);
+  println(waveHeight[0], waveHeight.length);
   println("---------------------");
 }
 
@@ -96,23 +112,56 @@ void setPosition(PVector pos)
   myMessage.add(pos.x);
   myMessage.add(pos.y);
   myMessage.add(pos.z);
-  oscP5.send(myMessage, myRemoteLocation);
+
+  if (oscP5 != null)
+  {
+    oscP5.send(myMessage, myRemoteLocation);
+  }
 }
 
 void traceMovement()
 {
   int[] rawDepth;
-
+  Rectangle box;
+  float area;
   rawDepth = kinect.getRawDepth();
-  
-  setPosition(new PVector(random(0, 100), 200, 300));
+
+  for (int i=0; i < rawDepth.length; i++) {
+    if (rawDepth[i] >= minDepth && rawDepth[i] <= maxDepth) {
+      depthImg.pixels[i] = color(255);
+    } else {
+      depthImg.pixels[i] = color(0);
+    }
+  }
+
+  opencv.loadImage(depthImg);  
+  contours = opencv.findContours();
+
+  noFill();
+  strokeWeight(3);
+
+  for (Contour contour : contours) 
+  {
+    box = contour.getBoundingBox();
+    area = contour.area();
+    if(area > 1000)
+    {
+      rect(box.x,box.y,box.width,box.height);
+      text(area,box.x,box.y);
+      setPosition(new PVector(box.x,box.y,box.height));
+    }
+  }
 }
 
 void draw() {
-  if(isKinectLive){
+  
+  background(0);
+  stroke(255);
+  
+  if (isKinectLive) {
     traceMovement();
   }
-  
+
   if (millis() - time >= interval && sendOnce) {
     sendWaveData();
     time = millis();
@@ -123,34 +172,36 @@ void draw() {
 void serialEvent(Serial p) { 
   String str = p.readString();
   print(str);
-  
-  if(str.equals("!")){
+
+  if (str.equals("!")) {
     sendWaveData();
   }
 } 
 
 void sendWaveData()
 {
-  int tempWaveDir = (int)map(waveDir[waveIndex],0,360,0,180);
-  int tempWaveHeight = (int)map(waveHeight[waveIndex],0,2.9,0,180);
-  
-  arduino.write(tempWaveDir+","+tempWaveHeight);
- 
-  println("data sent :"+" "+tempWaveDir+","+tempWaveHeight);
-  
-  waveIndex++;
-  
-  if(waveIndex >= waveDir.length)
+  int tempWaveDir = (int)map(waveDir[waveIndex], 0, 360, 0, 180);
+  int tempWaveHeight = (int)map(waveHeight[waveIndex], 0, 2.9, 0, 180);
+
+  if (arduino != null)
   {
-    waveIndex = 0;
+    arduino.write(tempWaveDir+","+tempWaveHeight);
+
+    println("data sent :"+" "+tempWaveDir+","+tempWaveHeight);
+
+    waveIndex++;
+
+    if (waveIndex >= waveDir.length)
+    {
+      waveIndex = 0;
+    }
   }
 }
 
 void mousePressed()
 {
-  int wave1 = (int)random(0,180);
-  int wave2 = (int)random(0,180);
- 
+  int wave1 = (int)random(0, 180);
+  int wave2 = (int)random(0, 180);
+
   arduino.write(wave1+","+wave2);
 }
-  
